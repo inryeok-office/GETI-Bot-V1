@@ -175,6 +175,47 @@ DiscordMessageCommand → Renderer → RenderedDiscordMessage
 - 실제 Discord Guild/Token을 사용하는 통합 Test는 하지 않는다. Fake
   Adapter/Mock Client로 Command Handler와 Adapter를 각각 Unit Test한다.
 
+## Idempotency
+
+`IdempotencyStore<T>` Interface와 `InMemoryIdempotencyStore<T>` 구현으로
+동일 `X-Idempotency-Key`를 가진 CREATE 요청의 중복 Discord 전송을
+막는다.
+
+```
+CREATE 요청 → IdempotentDiscordMessageCommandHandler
+→ IdempotencyStore.getOrCreate(idempotencyKey, () => 실제 CREATE 수행)
+```
+
+- **정확한 보장 범위: 동일 Bot Process 생명주기 안에서만 중복 CREATE를
+  방지한다.** Exactly-once를 보장하지 않으며, Process가 재시작되면
+  이전 기록은 모두 사라진다(In-memory 구현, Redis 등 외부 저장소를
+  사용하지 않는다).
+- 동시성: key 조회 직후 factory가 반환한 Promise를 동기적으로 Map에
+  저장해, 거의 동시에 들어온 두 요청도 실제 Discord 전송은 한 번만
+  일어나도록 한다. 단순 `if (map.has(key))` 방식은 Check-then-act
+  Race가 발생할 수 있어 채택하지 않았다.
+- 실패한 시도는 Store에서 제거되어, 이후 재시도 요청은 다시 시도된다
+  (성공한 CREATE 결과만 dedup 대상).
+- PATCH(UPDATE/CLOSE_NOTICE/DELETE_NOTICE)는 Idempotency Key 대상이
+  아니므로 dedup을 적용하지 않는다.
+
+## 안정성 보강
+
+- **Command Timeout**: Discord API 호출이 무한정 걸리는 상황을 막기
+  위해 CREATE/PATCH Command 처리에 기본 10초 Timeout을 적용한다.
+  초과 시 `DISCORD_UNAVAILABLE`(retryable: true)로 일관되게 응답한다.
+- **Body Size 제한**: Internal API Request Body 상한을 Fastify
+  기본값(1MB)보다 작은 256KB로 명시적으로 설정했다. Discord Embed
+  자체가 수천자 수준의 길이 제한을 가지므로 충분한 여유다.
+- **Request Id 로깅**: CREATE/PATCH 성공 시 `requestId`와 결과
+  `messageId`를 포함한 로그를 남긴다(Fastify의 기본 Access Log에 더해
+  도메인 수준 로그를 보강).
+- **Error Response 일관성**: Body 크기 초과, 잘못된 JSON 등 Route
+  Handler에 도달하기 전에 Fastify가 자체적으로 던지는 오류도 Internal
+  API Error Contract(`code`/`message`/`retryable`/`requestId`)와 동일한
+  형태로 응답한다. HTTP Status는 Fastify가 판단한 값(예: Body 초과 시
+  413)을 그대로 유지한다.
+
 ## 현재 구현 범위
 
 - 프로젝트 기본 구조
@@ -186,9 +227,10 @@ DiscordMessageCommand → Renderer → RenderedDiscordMessage
 - Discord Embed Renderer (9개 Template, Template Data Validation)
 - Discord Message 생성/수정 (`DiscordJsMessageAdapter`), Mention 정책,
   Discord API Error Mapping
+- CREATE 중복 방지(In-memory Idempotency, 동일 Process 생명주기 한정),
+  Command Timeout, Body Size 제한
 
-Idempotency 저장소는 포함하지 않는다(다음 Phase 예정). 동일
-`X-Idempotency-Key`로 CREATE를 다시 호출해도 현재는 중복 전송을 막지
+Redis/DB/Queue 등 외부 저장소를 이용한 Durable Idempotency는 포함하지
 않는다.
 
 ## Development Rules

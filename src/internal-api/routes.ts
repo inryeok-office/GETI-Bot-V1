@@ -1,5 +1,6 @@
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppInstance } from '../app/fastify-instance.js';
+import { withTimeout } from '../common/timeout.js';
 import { isValidInternalApiKey } from './auth.js';
 import { toCreateCommand, toPatchCommand } from './command.js';
 import { ApiError, buildErrorResponse, statusForErrorCode, toApiError } from './error.js';
@@ -12,9 +13,25 @@ import {
   patchParamsSchema,
 } from './schema.js';
 
+/**
+ * Discord API 호출이 무한정 걸리는 상황을 막기 위한 Command 처리 Timeout
+ * 기본값. 초과 시 DISCORD_UNAVAILABLE(retryable)로 일관되게 응답한다.
+ */
+const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
+
 export interface InternalApiOptions {
   apiKey: string;
   handler: DiscordMessageCommandHandler;
+  /** 기본값(10초) 대신 사용할 Command 처리 Timeout(ms). 주로 Test에서 사용한다. */
+  commandTimeoutMs?: number;
+}
+
+function withCommandTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return withTimeout(
+    promise,
+    timeoutMs,
+    () => new ApiError('DISCORD_UNAVAILABLE', 'Discord message command timed out', true),
+  );
 }
 
 function sendApiError(reply: FastifyReply, error: ApiError, requestId: string): FastifyReply {
@@ -51,9 +68,25 @@ function handleUnexpectedError(
  * /health 등 다른 Route에는 영향을 주지 않는다.
  */
 export function registerInternalDiscordRoutes(app: AppInstance, options: InternalApiOptions): void {
-  const { apiKey, handler } = options;
+  const { apiKey, handler, commandTimeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = options;
 
   app.register(async (internalApp) => {
+    // Body 크기 초과, 잘못된 JSON 등 Route Handler에 도달하기 전에
+    // Fastify가 자체적으로 던지는 오류까지 Internal API Error Contract와
+    // 동일한 응답 형태(code/message/retryable/requestId)로 통일한다.
+    // HTTP Status는 Fastify가 판단한 값(예: 413)을 그대로 유지한다.
+    internalApp.setErrorHandler(
+      (error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
+        const requestId = request.id;
+        request.log.warn(
+          { err: error, requestId, statusCode: error.statusCode },
+          'Internal API request rejected before reaching the route handler',
+        );
+        const apiError = new ApiError('INVALID_REQUEST', 'Request could not be processed', false);
+        return reply.code(error.statusCode ?? 400).send(buildErrorResponse(apiError, requestId));
+      },
+    );
+
     internalApp.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
       const candidate = extractHeaderValue(request.headers['x-internal-api-key']);
       if (!isValidInternalApiKey(candidate, apiKey)) {
@@ -92,7 +125,11 @@ export function registerInternalDiscordRoutes(app: AppInstance, options: Interna
       });
 
       try {
-        const result = await handler.handleCreate(command);
+        const result = await withCommandTimeout(handler.handleCreate(command), commandTimeoutMs);
+        request.log.info(
+          { requestId, messageId: result.messageId },
+          'Discord message CREATE succeeded',
+        );
         return reply.code(201).send({ messageId: result.messageId, requestId });
       } catch (error) {
         return handleUnexpectedError(request, reply, error, requestId);
@@ -123,7 +160,11 @@ export function registerInternalDiscordRoutes(app: AppInstance, options: Interna
       const command = toPatchCommand(bodyResult.data, paramsResult.data, { requestId });
 
       try {
-        const result = await handler.handlePatch(command);
+        const result = await withCommandTimeout(handler.handlePatch(command), commandTimeoutMs);
+        request.log.info(
+          { requestId, messageId: result.messageId, action: command.action },
+          'Discord message PATCH succeeded',
+        );
         return reply.code(200).send({ messageId: result.messageId, requestId });
       } catch (error) {
         return handleUnexpectedError(request, reply, error, requestId);

@@ -1,16 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import pino from 'pino';
 import { createServer } from '../app/server.js';
+import { IdempotentDiscordMessageCommandHandler } from '../idempotency/idempotent-handler.js';
+import { InMemoryIdempotencyStore } from '../idempotency/store.js';
 import { ApiError } from './error.js';
 import type { DiscordMessageCommandHandler } from './handler.js';
 
 const logger = pino({ level: 'silent' });
 const API_KEY = 'test-internal-api-key';
 
-function buildApp(handler: DiscordMessageCommandHandler) {
+function buildApp(handler: DiscordMessageCommandHandler, commandTimeoutMs?: number) {
   return createServer({
     logger,
-    internalApi: { apiKey: API_KEY, handler },
+    internalApi: { apiKey: API_KEY, handler, commandTimeoutMs },
   });
 }
 
@@ -169,6 +171,23 @@ describe('POST /internal/v1/discord/messages', () => {
     expect(body.code).toBe('INTERNAL_ERROR');
     expect(JSON.stringify(body)).not.toContain('stack trace');
   });
+
+  it('responds with DISCORD_UNAVAILABLE(retryable) when the handler exceeds the command timeout', async () => {
+    const handler = fakeHandler({
+      handleCreate: vi.fn().mockReturnValue(new Promise(() => {})),
+    });
+    app = buildApp(handler, 10);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/internal/v1/discord/messages',
+      headers: { 'x-internal-api-key': API_KEY, 'x-idempotency-key': 'idem-1' },
+      payload: validCreateBody,
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ code: 'DISCORD_UNAVAILABLE', retryable: true });
+  });
 });
 
 describe('PATCH /internal/v1/discord/messages/:messageId', () => {
@@ -249,6 +268,34 @@ describe('/health does not require internal API authentication', () => {
     const response = await app.inject({ method: 'GET', url: '/health' });
 
     expect(response.statusCode).toBe(200);
+    await app.close();
+  });
+});
+
+describe('CREATE idempotency end-to-end (wired the same way as index.ts)', () => {
+  it('only invokes the inner handler once for two HTTP CREATE requests with the same X-Idempotency-Key', async () => {
+    const inner = fakeHandler();
+    const handler = new IdempotentDiscordMessageCommandHandler(
+      inner,
+      new InMemoryIdempotencyStore(),
+    );
+    const app = buildApp(handler);
+
+    const send = () =>
+      app.inject({
+        method: 'POST',
+        url: '/internal/v1/discord/messages',
+        headers: { 'x-internal-api-key': API_KEY, 'x-idempotency-key': 'idem-shared' },
+        payload: validCreateBody,
+      });
+
+    const [first, second] = await Promise.all([send(), send()]);
+
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(201);
+    expect(first.json().messageId).toBe(second.json().messageId);
+    expect(inner.handleCreate).toHaveBeenCalledTimes(1);
+
     await app.close();
   });
 });

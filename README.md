@@ -8,9 +8,9 @@ GETI 원본 데이터와 비즈니스 판단은 Spring Boot 기반 GETI Server�
 자세한 내용은 [docs/architecture.md](docs/architecture.md)를 참고하세요.
 
 > 현재는 Internal API(인증/Request Validation/Command Mapping), Discord
-> Embed Renderer, Discord 메시지 생성/수정(Delivery)까지 구현된
-> 단계입니다. Idempotency 저장소(중복 CREATE 방지)는 아직 구현되어 있지
-> 않습니다. `GET /health`와 Internal API 2종을 제공합니다.
+> Embed Renderer, Discord 메시지 생성/수정(Delivery), CREATE 중복 방지
+> (In-memory Idempotency)까지 구현된 단계입니다. `GET /health`와
+> Internal API 2종을 제공합니다.
 
 ## Architecture 요약
 
@@ -87,8 +87,15 @@ Discord 메시지를 생성/수정합니다. Token이 없거나 연결에 실패
 검증과 Command Mapping까지만 수행하고 `INTERNAL_ERROR`를 반환하는
 Placeholder Handler로 안전하게 대체합니다.
 
-> 동일한 `X-Idempotency-Key`로 CREATE를 다시 호출해도 현재는 중복
-> 전송을 막지 않습니다(Idempotency Store는 다음 Phase 예정).
+> 동일한 `X-Idempotency-Key`로 CREATE를 다시 호출하면 Discord 메시지를
+> 다시 전송하지 않고 기존 성공 결과를 재사용합니다. 단, 이 dedup은
+> **동일 Bot Process 생명주기 안에서만** 유효합니다(In-memory 구현,
+> Process 재시작 시 초기화). Redis 등 Durable Store는 사용하지
+> 않습니다.
+
+CREATE/PATCH Command 처리에는 기본 10초 Timeout이 적용되며, 초과 시
+`DISCORD_UNAVAILABLE`(retryable)로 응답합니다. Request Body는
+256KB로 제한됩니다.
 
 ## Test
 
@@ -165,6 +172,9 @@ src/
 │  ├─ error-mapping.ts   # discord.js 오류 → Bot ErrorCode
 │  ├─ adapter.ts          # discord.js Client 기반 Adapter 구현
 │  └─ command-handler.ts  # Renderer + Adapter를 조합하는 실제 Command Handler
+├─ idempotency/
+│  ├─ store.ts              # IdempotencyStore / InMemoryIdempotencyStore
+│  └─ idempotent-handler.ts # CREATE 중복 방지 Decorator
 └─ index.ts       # Bootstrap / Graceful Shutdown
 ```
 
