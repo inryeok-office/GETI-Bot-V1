@@ -1,7 +1,7 @@
 name: Feature
 description: 새로운 기능 또는 작업 제안
 title: '[FEAT] '
-labels: ['feature']
+labels: ['type:feature']
 body:
   - type: textarea
     id: overview
@@ -39,6 +39,8 @@ body:
     id: notes
     attributes:
       label: 참고 사항
-      description: 추가로 참고할 내용이 있다면 작성합니다.
+      description: |
+        추가로 참고할 내용이 있다면 작성합니다.
+        (AI Agent 작업 시 관련 Architecture/Harness 문서를 확인)
     validations:
       required: false

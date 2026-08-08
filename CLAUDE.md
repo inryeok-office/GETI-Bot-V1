@@ -6,6 +6,24 @@ GETI Discord Bot
 
 - GETI Server의 명령을 Discord로 전달하는 독립 Service
 
+Codex 등 다른 AI Coding Agent를 위한 공통 지침은 [AGENTS.md](AGENTS.md)에
+있다. 두 문서는 같은 규칙을 공유하며, Claude Code는 이 CLAUDE.md를 우선
+읽는다. 공통 작업 흐름 요약은 [docs/ai-workflow.md](docs/ai-workflow.md)를
+참고한다.
+
+# Source of Truth
+
+우선순위:
+
+1. 현재 작업 중인 Issue / PR의 요구사항
+2. CLAUDE.md / AGENTS.md
+3. docs/architecture.md
+4. 기존 코드 및 테스트
+5. README
+
+규칙과 현재 Issue/PR 요구사항이 충돌하면 더 구체적인 현재 요구사항을
+우선한다.
+
 # Tech Stack
 
 - Node.js 22
@@ -59,6 +77,28 @@ fix/*
 10. Commit
 11. Push
 12. Draft PR
+
+# Before Editing
+
+- 현재 Issue/PR 요구사항을 정확히 확인했는가
+- 관련 기존 코드/문서를 읽었는가
+- 이번 작업이 기존 Issue/PR 범위 안에 있는가
+
+# After Editing
+
+- lint/format:check/typecheck/test/build 모두 실행했는가
+- git diff로 의도하지 않은 변경이 없는가
+- Secret이 포함되지 않았는가
+- Self Review 2회를 수행했는가
+
+# Working PR Discipline
+
+- 이미 진행 중인 Issue/Branch/PR이 있다면 새 Issue/Branch/PR을 임의로
+  만들지 않고 그 안에서 작업을 이어간다.
+- CI가 실패하면 이번 변경 때문인지 먼저 확인한다. 이번 변경이 원인이면
+  수정 후 재확인하고, GitHub 인프라 등 외부 요인이면 코드를 억지로
+  바꾸지 않고 그대로 보고한다.
+- 현재 Issue 범위 밖의 "미래에 필요할 기능"을 미리 구현하지 않는다.
 
 # Scope Control
 

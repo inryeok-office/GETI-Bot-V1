@@ -120,3 +120,11 @@ src/
 │  └─ logger.ts     # Pino Logger 생성
 └─ index.ts         # Bootstrap / Graceful Shutdown
 ```
+
+## AI-assisted Development
+
+이 저장소에서 AI Coding Agent로 작업할 때는 아래 문서를 따릅니다.
+
+- Claude Code → [CLAUDE.md](CLAUDE.md)
+- Codex / 기타 Agent → [AGENTS.md](AGENTS.md)
+- 공통 작업 흐름 → [docs/ai-workflow.md](docs/ai-workflow.md)

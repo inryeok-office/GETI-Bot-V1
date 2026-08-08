@@ -70,3 +70,8 @@ PATCH /internal/v1/discord/messages/{messageId}
 - Graceful Shutdown
 
 실제 메시지 전송, Embed Renderer, Internal API는 포함하지 않는다.
+
+## Development Rules
+
+AI Coding Agent를 포함한 개발 규칙은 [AGENTS.md](../AGENTS.md) /
+[CLAUDE.md](../CLAUDE.md)를 참고한다.

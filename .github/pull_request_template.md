@@ -16,3 +16,5 @@ Closes #
 - [ ] build
 - [ ] Self Review 완료
 - [ ] Secret이 Commit되지 않음
+- [ ] 변경 범위가 관련 Issue를 벗어나지 않음
+- [ ] Architecture/Harness 규칙 확인
