@@ -43,4 +43,19 @@ describe('loadEnv', () => {
   it('throws with a readable message when NODE_ENV is invalid', () => {
     expect(() => loadEnv({ NODE_ENV: 'staging' })).toThrow(/NODE_ENV/);
   });
+
+  it('requires GETI_INTERNAL_API_KEY when NODE_ENV is production', () => {
+    expect(() => loadEnv({ NODE_ENV: 'production' })).toThrow(/GETI_INTERNAL_API_KEY/);
+  });
+
+  it('does not require GETI_INTERNAL_API_KEY outside production', () => {
+    expect(() => loadEnv({ NODE_ENV: 'development' })).not.toThrow();
+    expect(() => loadEnv({ NODE_ENV: 'test' })).not.toThrow();
+  });
+
+  it('succeeds in production when GETI_INTERNAL_API_KEY is set', () => {
+    expect(() =>
+      loadEnv({ NODE_ENV: 'production', GETI_INTERNAL_API_KEY: 'api-key' }),
+    ).not.toThrow();
+  });
 });

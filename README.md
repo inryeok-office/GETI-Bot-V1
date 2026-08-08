@@ -7,8 +7,9 @@ GETI 원본 데이터와 비즈니스 판단은 Spring Boot 기반 GETI Server�
 이 Bot은 전달받은 요청을 Discord 메시지로 렌더링/전송하는 역할만 담당합니다.
 자세한 내용은 [docs/architecture.md](docs/architecture.md)를 참고하세요.
 
-> 현재는 초기 프로젝트 세팅 단계이며, 실제 Discord 메시지 전송/GETI 연동
-> 기능은 아직 구현되어 있지 않습니다. `GET /health`만 제공합니다.
+> 현재는 Internal API(인증/Request Validation/Command Mapping)까지
+> 구현된 단계이며, 실제 Discord 메시지 전송(Renderer/Delivery)은 아직
+> 구현되어 있지 않습니다. `GET /health`와 Internal API 2종을 제공합니다.
 
 ## Architecture 요약
 
@@ -47,14 +48,14 @@ pnpm install
 cp .env.example .env
 ```
 
-| 변수                     | 설명                                                 | 필수 여부                                                  |
-| ------------------------ | ---------------------------------------------------- | ---------------------------------------------------------- |
-| `NODE_ENV`               | 실행 환경 (`development` / `test` / `production`)    | 아니오 (기본값 `development`)                              |
-| `PORT`                   | HTTP 서버 포트                                       | 아니오 (기본값 `3000`)                                     |
-| `DISCORD_BOT_TOKEN`      | Discord Bot Token                                    | 아니오 (없으면 Discord 연결을 건너뛰고 Health 서버만 기동) |
-| `DISCORD_APPLICATION_ID` | Discord Application ID                               | 아니오                                                     |
-| `GETI_INTERNAL_API_KEY`  | GETI Server 연동용 API Key (향후 기능에서 사용 예정) | 아니오                                                     |
-| `LOG_LEVEL`              | Pino 로그 레벨                                       | 아니오 (기본값 `info`)                                     |
+| 변수                     | 설명                                              | 필수 여부                                                  |
+| ------------------------ | ------------------------------------------------- | ---------------------------------------------------------- |
+| `NODE_ENV`               | 실행 환경 (`development` / `test` / `production`) | 아니오 (기본값 `development`)                              |
+| `PORT`                   | HTTP 서버 포트                                    | 아니오 (기본값 `3000`)                                     |
+| `DISCORD_BOT_TOKEN`      | Discord Bot Token                                 | 아니오 (없으면 Discord 연결을 건너뛰고 Health 서버만 기동) |
+| `DISCORD_APPLICATION_ID` | Discord Application ID                            | 아니오                                                     |
+| `GETI_INTERNAL_API_KEY`  | GETI Server 연동용 Internal API Key               | `production`에서는 필수 (없으면 기동 실패)                 |
+| `LOG_LEVEL`              | Pino 로그 레벨                                    | 아니오 (기본값 `info`)                                     |
 
 Discord Bot Token은 [Discord Developer Portal](https://discord.com/developers/applications)에서
 Application을 생성한 뒤 Bot 탭에서 발급받을 수 있습니다.
@@ -66,6 +67,23 @@ pnpm dev
 ```
 
 기본적으로 `http://localhost:3000/health`에서 상태를 확인할 수 있습니다.
+
+## Internal API
+
+GETI Server가 Discord 메시지 생성/수정을 요청하는 내부 전용 API입니다.
+자세한 계약은 [docs/architecture.md](docs/architecture.md)를 참고하세요.
+
+```
+POST  /internal/v1/discord/messages              # CREATE
+PATCH /internal/v1/discord/messages/{messageId}  # UPDATE / CLOSE_NOTICE / DELETE_NOTICE
+```
+
+요청에는 `X-Internal-Api-Key` Header가 필요하며, CREATE 요청에는
+`X-Idempotency-Key` Header가 추가로 필요합니다.
+
+> 현재는 요청 검증과 Command Mapping까지만 구현되어 있어, 실제 Discord
+> 메시지 전송을 담당하는 Renderer/Discord Message Service가
+> 구현되기 전까지는 모든 요청이 `INTERNAL_ERROR`로 응답합니다.
 
 ## Test
 
@@ -112,13 +130,23 @@ docker run --rm -p 3000:3000 --env-file .env geti-discord-bot
 ```
 src/
 ├─ app/
-│  ├─ server.ts     # Fastify Application 생성
-│  └─ discord.ts    # Discord Client 생성/연결/종료
+│  ├─ server.ts            # Fastify Application 생성
+│  ├─ fastify-instance.ts  # 공유 Fastify Instance 타입
+│  └─ discord.ts           # Discord Client 생성/연결/종료
 ├─ config/
-│  └─ env.ts        # 환경변수 검증
+│  └─ env.ts                # 환경변수 검증
 ├─ common/
-│  └─ logger.ts     # Pino Logger 생성
-└─ index.ts         # Bootstrap / Graceful Shutdown
+│  ├─ logger.ts              # Pino Logger 생성
+│  └─ request-id.ts          # X-Request-Id 해석
+├─ internal-api/
+│  ├─ types.ts       # TargetType/Action/Template/Command 타입
+│  ├─ schema.ts      # Zod Request Schema
+│  ├─ command.ts     # Transport DTO → Domain Command 매핑
+│  ├─ auth.ts        # Internal API Key 인증
+│  ├─ error.ts       # ErrorCode/ApiError/Error Response
+│  ├─ handler.ts     # DiscordMessageCommandHandler 계약
+│  └─ routes.ts      # Internal API Route 등록
+└─ index.ts          # Bootstrap / Graceful Shutdown
 ```
 
 ## AI-assisted Development
