@@ -113,13 +113,31 @@ Service는 아직 구현되지 않았으므로(이후 Phase 예정), 현재는 �
 `INTERNAL_ERROR`(재시도 불가)로 응답한다. GETI Server 실 연동 전에
 Renderer/Delivery 구현이 선행되어야 한다.
 
-## 향후 Renderer (예정, 이번 PR 범위 아님)
+## Renderer
 
-메시지 종류별 Embed Renderer도 향후 범위로 문서화만 해둔다.
+`DiscordMessageCommand`를 Discord Embed로 변환하는 책임은 전부 Bot이
+소유한다. GETI Server는 Embed JSON을 직접 보내지 않고 의미 데이터만
+전달한다.
 
-- `JOB_*` (공고 관련 이벤트)
-- `PROGRAM_*` (프로그램 관련 이벤트)
-- `INQUIRY_CREATED` (문의 생성 이벤트)
+```
+DiscordMessageCommand → Renderer Registry(Template별 dispatch)
+→ Template Data Zod Schema 검증 → RenderedDiscordMessage(순수 데이터)
+```
+
+- `RenderedDiscordMessage` / `RenderedEmbed`는 discord.js에 의존하지
+  않는 순수 데이터 타입이다. Discord 전송 시점(Phase 3)에 얇은 Adapter로
+  discord.js가 요구하는 형태로 변환한다.
+- 9개 Template(`JOB_*` 4종, `PROGRAM_*` 4종, `INQUIRY_CREATED`)마다
+  전용 Zod data schema가 있으며, 모두 `.strict()`로 선언되어 명시되지
+  않은 필드는 요청 자체가 거부된다.
+- Discord Embed 제한(title 256자 / description 4096자 / field value
+  1024자)을 넘는 텍스트는 Renderer가 자동으로 truncate한다.
+- `INQUIRY_CREATED`는 관리자 Alert 용도로, data schema에 전화번호/
+  이메일/Token/파일 다운로드 URL/문의 전문 필드를 아예 선언하지 않아
+  이런 정보가 Discord로 렌더링될 수 없다.
+- Renderer는 잘못된 data에 대해 `RenderError`(Renderer 내부 오류
+  타입)를 던진다. 이를 Internal API의 Error Contract로 변환하는 책임은
+  Renderer를 호출하는 Discord Message Service(Phase 3)에 있다.
 
 ## 현재 구현 범위
 
@@ -129,9 +147,9 @@ Renderer/Delivery 구현이 선행되어야 한다.
 - Health Check API (`GET /health`)
 - Graceful Shutdown
 - Internal API 인증/Request Validation/Command Mapping
+- Discord Embed Renderer (9개 Template, Template Data Validation)
 
-실제 Discord 메시지 송수신, Embed Renderer, Idempotency 저장소는
-포함하지 않는다.
+실제 Discord 메시지 송수신과 Idempotency 저장소는 포함하지 않는다.
 
 ## Development Rules
 
