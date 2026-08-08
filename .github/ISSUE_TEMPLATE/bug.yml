@@ -1,0 +1,42 @@
+name: Bug
+description: 버그 리포트
+title: '[BUG] '
+labels: ['bug']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 문제
+      description: 어떤 문제가 발생했는지 설명합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 재현 방법
+      description: 문제를 재현하는 단계를 작성합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 예상 동작
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제 동작
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 환경
+      description: OS, Node 버전 등 재현에 영향을 줄 수 있는 환경 정보를 작성합니다.
+    validations:
+      required: false

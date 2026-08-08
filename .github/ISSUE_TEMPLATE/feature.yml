@@ -1,0 +1,44 @@
+name: Feature
+description: 새로운 기능 또는 작업 제안
+title: '[FEAT] '
+labels: ['feature']
+body:
+  - type: textarea
+    id: overview
+    attributes:
+      label: 개요
+      description: 이 작업이 무엇인지 간단히 설명합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: 목표
+      description: 이 작업으로 달성하려는 목표를 설명합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 작업 내용
+      description: 구체적인 작업 항목을 나열합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: 완료 조건
+      description: 이 작업이 완료되었다고 판단할 수 있는 기준을 나열합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 참고 사항
+      description: 추가로 참고할 내용이 있다면 작성합니다.
+    validations:
+      required: false
