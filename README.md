@@ -7,10 +7,10 @@ GETI 원본 데이터와 비즈니스 판단은 Spring Boot 기반 GETI Server�
 이 Bot은 전달받은 요청을 Discord 메시지로 렌더링/전송하는 역할만 담당합니다.
 자세한 내용은 [docs/architecture.md](docs/architecture.md)를 참고하세요.
 
-> 현재는 Internal API(인증/Request Validation/Command Mapping)와 Discord
-> Embed Renderer까지 구현된 단계이며, 실제 Discord 메시지 전송(Delivery)은
-> 아직 구현되어 있지 않습니다. `GET /health`와 Internal API 2종을
-> 제공합니다.
+> 현재는 Internal API(인증/Request Validation/Command Mapping), Discord
+> Embed Renderer, Discord 메시지 생성/수정(Delivery)까지 구현된
+> 단계입니다. Idempotency 저장소(중복 CREATE 방지)는 아직 구현되어 있지
+> 않습니다. `GET /health`와 Internal API 2종을 제공합니다.
 
 ## Architecture 요약
 
@@ -82,9 +82,13 @@ PATCH /internal/v1/discord/messages/{messageId}  # UPDATE / CLOSE_NOTICE / DELET
 요청에는 `X-Internal-Api-Key` Header가 필요하며, CREATE 요청에는
 `X-Idempotency-Key` Header가 추가로 필요합니다.
 
-> 현재는 요청 검증과 Command Mapping까지만 구현되어 있어, 실제 Discord
-> 메시지 전송을 담당하는 Renderer/Discord Message Service가
-> 구현되기 전까지는 모든 요청이 `INTERNAL_ERROR`로 응답합니다.
+`DISCORD_BOT_TOKEN`이 설정되어 Discord Client가 연결된 경우에만 실제로
+Discord 메시지를 생성/수정합니다. Token이 없거나 연결에 실패하면 요청
+검증과 Command Mapping까지만 수행하고 `INTERNAL_ERROR`를 반환하는
+Placeholder Handler로 안전하게 대체합니다.
+
+> 동일한 `X-Idempotency-Key`로 CREATE를 다시 호출해도 현재는 중복
+> 전송을 막지 않습니다(Idempotency Store는 다음 Phase 예정).
 
 ## Test
 
@@ -156,6 +160,11 @@ src/
 │  ├─ program.ts  # PROGRAM_* Renderer
 │  ├─ inquiry.ts  # INQUIRY_CREATED Renderer
 │  └─ registry.ts # Template → Renderer Registry
+├─ discord-delivery/
+│  ├─ types.ts           # DiscordMessageAdapter 계약
+│  ├─ error-mapping.ts   # discord.js 오류 → Bot ErrorCode
+│  ├─ adapter.ts          # discord.js Client 기반 Adapter 구현
+│  └─ command-handler.ts  # Renderer + Adapter를 조합하는 실제 Command Handler
 └─ index.ts       # Bootstrap / Graceful Shutdown
 ```
 
