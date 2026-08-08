@@ -1,9 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import {
+  TEMPLATE_DATA_SCHEMAS,
   inquiryCreatedDataSchema,
   jobPublishedDataSchema,
   programPublishedDataSchema,
 } from './schemas.js';
+import type { Template } from '../internal-api/types.js';
+
+/** Template별 최소 유효 data. 모든 필수 필드만 채운다. */
+const MINIMAL_VALID_DATA: Record<Template, Record<string, unknown>> = {
+  JOB_PUBLISHED: { jobId: 'job-1', title: '채용 공고' },
+  JOB_UPDATED: { jobId: 'job-1', title: '채용 공고' },
+  JOB_CLOSED: { jobId: 'job-1', title: '채용 공고' },
+  JOB_DELETED: { jobId: 'job-1', title: '채용 공고' },
+  PROGRAM_PUBLISHED: { programId: 'program-1', title: '프로그램' },
+  PROGRAM_UPDATED: { programId: 'program-1', title: '프로그램' },
+  PROGRAM_CLOSED: { programId: 'program-1', title: '프로그램' },
+  PROGRAM_DELETED: { programId: 'program-1', title: '프로그램' },
+  INQUIRY_CREATED: { inquiryId: 'inquiry-1' },
+};
+
+describe('TEMPLATE_DATA_SCHEMAS (every template)', () => {
+  for (const [template, schema] of Object.entries(TEMPLATE_DATA_SCHEMAS)) {
+    const validData = MINIMAL_VALID_DATA[template as Template];
+
+    it(`${template}: accepts its minimal valid data`, () => {
+      expect(schema.safeParse(validData).success).toBe(true);
+    });
+
+    it(`${template}: rejects an unrecognized extra field (.strict())`, () => {
+      const result = schema.safeParse({ ...validData, unexpectedField: 'value' });
+      expect(result.success).toBe(false);
+    });
+  }
+});
 
 describe('jobPublishedDataSchema', () => {
   it('accepts a valid payload', () => {
