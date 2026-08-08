@@ -7,10 +7,10 @@ import type { DiscordMessageCommandHandler } from './handler.js';
 const logger = pino({ level: 'silent' });
 const API_KEY = 'test-internal-api-key';
 
-function buildApp(handler: DiscordMessageCommandHandler) {
+function buildApp(handler: DiscordMessageCommandHandler, commandTimeoutMs?: number) {
   return createServer({
     logger,
-    internalApi: { apiKey: API_KEY, handler },
+    internalApi: { apiKey: API_KEY, handler, commandTimeoutMs },
   });
 }
 
@@ -168,6 +168,23 @@ describe('POST /internal/v1/discord/messages', () => {
     const body = response.json();
     expect(body.code).toBe('INTERNAL_ERROR');
     expect(JSON.stringify(body)).not.toContain('stack trace');
+  });
+
+  it('responds with DISCORD_UNAVAILABLE(retryable) when the handler exceeds the command timeout', async () => {
+    const handler = fakeHandler({
+      handleCreate: vi.fn().mockReturnValue(new Promise(() => {})),
+    });
+    app = buildApp(handler, 10);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/internal/v1/discord/messages',
+      headers: { 'x-internal-api-key': API_KEY, 'x-idempotency-key': 'idem-1' },
+      payload: validCreateBody,
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ code: 'DISCORD_UNAVAILABLE', retryable: true });
   });
 });
 

@@ -19,6 +19,13 @@ export interface CreateServerOptions {
 }
 
 /**
+ * Internal API Request Body 크기 상한.
+ * Discord Embed 자체가 title/description/field 길이 제한(수천자 수준)을
+ * 가지므로 Fastify 기본값(1MB)보다 훨씬 작은 값으로도 충분하다.
+ */
+const REQUEST_BODY_LIMIT_BYTES = 256 * 1024;
+
+/**
  * Fastify Application을 생성한다.
  * index.ts에서 직접 Route/Plugin을 등록하지 않고 이 함수로 책임을 분리한다.
  */
@@ -28,6 +35,7 @@ export function createServer(options: CreateServerOptions) {
   const app = Fastify({
     loggerInstance: logger,
     genReqId: resolveRequestId,
+    bodyLimit: REQUEST_BODY_LIMIT_BYTES,
   });
 
   app.get('/health', async () => {

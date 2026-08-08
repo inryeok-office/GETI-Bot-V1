@@ -37,3 +37,40 @@ describe('createServer /health', () => {
     });
   });
 });
+
+describe('createServer body size limit', () => {
+  let app: ReturnType<typeof createServer> | undefined;
+
+  afterEach(async () => {
+    await app?.close();
+    app = undefined;
+  });
+
+  it('rejects a request body larger than the configured limit with 413', async () => {
+    app = createServer({
+      logger,
+      internalApi: {
+        apiKey: 'test-key',
+        handler: {
+          handleCreate: async () => ({ messageId: 'unused' }),
+          handlePatch: async () => ({ messageId: 'unused' }),
+        },
+      },
+    });
+
+    const oversizedBody = JSON.stringify({ data: { padding: 'x'.repeat(300 * 1024) } });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/internal/v1/discord/messages',
+      headers: {
+        'x-internal-api-key': 'test-key',
+        'x-idempotency-key': 'idem-1',
+        'content-type': 'application/json',
+      },
+      payload: oversizedBody,
+    });
+
+    expect(response.statusCode).toBe(413);
+  });
+});
