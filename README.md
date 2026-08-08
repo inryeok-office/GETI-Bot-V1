@@ -7,9 +7,10 @@ GETI 원본 데이터와 비즈니스 판단은 Spring Boot 기반 GETI Server�
 이 Bot은 전달받은 요청을 Discord 메시지로 렌더링/전송하는 역할만 담당합니다.
 자세한 내용은 [docs/architecture.md](docs/architecture.md)를 참고하세요.
 
-> 현재는 Internal API(인증/Request Validation/Command Mapping)까지
-> 구현된 단계이며, 실제 Discord 메시지 전송(Renderer/Delivery)은 아직
-> 구현되어 있지 않습니다. `GET /health`와 Internal API 2종을 제공합니다.
+> 현재는 Internal API(인증/Request Validation/Command Mapping)와 Discord
+> Embed Renderer까지 구현된 단계이며, 실제 Discord 메시지 전송(Delivery)은
+> 아직 구현되어 있지 않습니다. `GET /health`와 Internal API 2종을
+> 제공합니다.
 
 ## Architecture 요약
 
@@ -146,7 +147,16 @@ src/
 │  ├─ error.ts       # ErrorCode/ApiError/Error Response
 │  ├─ handler.ts     # DiscordMessageCommandHandler 계약
 │  └─ routes.ts      # Internal API Route 등록
-└─ index.ts          # Bootstrap / Graceful Shutdown
+├─ renderer/
+│  ├─ types.ts    # RenderedDiscordMessage/RenderError 타입
+│  ├─ limits.ts   # Discord Embed 제한 상수/truncate
+│  ├─ colors.ts   # Embed 강조 색상
+│  ├─ schemas.ts  # Template별 data Zod Schema
+│  ├─ job.ts      # JOB_* Renderer
+│  ├─ program.ts  # PROGRAM_* Renderer
+│  ├─ inquiry.ts  # INQUIRY_CREATED Renderer
+│  └─ registry.ts # Template → Renderer Registry
+└─ index.ts       # Bootstrap / Graceful Shutdown
 ```
 
 ## AI-assisted Development
