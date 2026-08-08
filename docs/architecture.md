@@ -107,11 +107,12 @@ SDK의 Raw Error나 Stack Trace는 응답에 포함하지 않는다.
 
 ### 현재 구현 상태
 
-Internal API는 인증/Request Validation/Command Mapping까지 정상
-동작한다. 하지만 실제 Discord 메시지 Renderer와 Discord Message
-Service는 아직 구현되지 않았으므로(이후 Phase 예정), 현재는 모든 요청이
-`INTERNAL_ERROR`(재시도 불가)로 응답한다. GETI Server 실 연동 전에
-Renderer/Delivery 구현이 선행되어야 한다.
+Internal API는 인증/Request Validation/Command Mapping/Renderer/
+Discord Message 전송까지 정상 동작한다. `DISCORD_BOT_TOKEN`이 설정되어
+Discord Client가 연결된 경우에만 실제 Delivery Handler를 사용하며, 그
+외의 경우(Token 미설정/연결 실패)에는 요청 검증/Command 매핑까지만
+수행하고 `INTERNAL_ERROR`를 반환하는 Placeholder Handler로 안전하게
+대체한다.
 
 ## Renderer
 
@@ -136,8 +137,43 @@ DiscordMessageCommand → Renderer Registry(Template별 dispatch)
   이메일/Token/파일 다운로드 URL/문의 전문 필드를 아예 선언하지 않아
   이런 정보가 Discord로 렌더링될 수 없다.
 - Renderer는 잘못된 data에 대해 `RenderError`(Renderer 내부 오류
-  타입)를 던진다. 이를 Internal API의 Error Contract로 변환하는 책임은
-  Renderer를 호출하는 Discord Message Service(Phase 3)에 있다.
+  타입)를 던진다. Discord Message Service가 이를 `INVALID_REQUEST`로
+  변환해 Internal API Error Contract에 맞춘다.
+
+## Discord Message Delivery
+
+`DiscordMessageCommandHandler`(Phase 1)의 실제 구현이다.
+`DiscordDeliveryCommandHandler`가 Renderer를 호출해 Embed를 만들고,
+`DiscordMessageAdapter`를 통해 실제 Discord 메시지를 생성/수정한다.
+
+```
+DiscordMessageCommand → Renderer → RenderedDiscordMessage
+→ DiscordMessageAdapter(discord.js Client 호출) → Discord API
+```
+
+- discord.js Client 호출은 `DiscordJsMessageAdapter` 안에서만 이뤄진다.
+  Command Handler는 `DiscordMessageAdapter` Interface에만 의존하므로
+  discord.js 없이 Fake Adapter로 Unit Test할 수 있다.
+- CREATE: Channel fetch → Message send → messageId 반환.
+- UPDATE / CLOSE_NOTICE / DELETE_NOTICE: 기존 Channel/Message fetch →
+  edit → messageId 반환. Discord Message를 물리적으로 삭제하지 않는다
+  (`message.delete()` 사용 안 함) — Renderer가 만든 "마감"/"삭제됨"
+  표현으로 기존 Message를 수정할 뿐이다.
+- Mention: CREATE 최초 성공에서만 `roleIds`를 Mention 문자열
+  (`<@&roleId>`)과 `allowedMentions.roles`로 전달한다. PATCH(UPDATE /
+  CLOSE_NOTICE / DELETE_NOTICE)는 Mention 문자열을 만들지 않고
+  `allowedMentions`는 항상 `{ parse: [], roles: [] }`로 고정해 재알림을
+  막는다. `@everyone` / `@here`는 사용하지 않는다.
+- Discord Channel이 없거나 텍스트 채널이 아니면 `CHANNEL_NOT_FOUND`로
+  응답한다.
+- discord.js 오류(Unknown Channel/Message, Missing Access/Permissions,
+  Rate Limit, 5xx 등)는 `mapDiscordError`가 Bot Error Contract의
+  ErrorCode로 변환한다. Raw discord.js Error 객체나 Stack Trace는
+  응답에 포함하지 않는다.
+- discord.js SDK가 처리하는 기본 Rate Limit 재시도를 그대로 신뢰하며,
+  별도의 Rate Limiter를 구현하지 않는다.
+- 실제 Discord Guild/Token을 사용하는 통합 Test는 하지 않는다. Fake
+  Adapter/Mock Client로 Command Handler와 Adapter를 각각 Unit Test한다.
 
 ## 현재 구현 범위
 
@@ -148,8 +184,12 @@ DiscordMessageCommand → Renderer Registry(Template별 dispatch)
 - Graceful Shutdown
 - Internal API 인증/Request Validation/Command Mapping
 - Discord Embed Renderer (9개 Template, Template Data Validation)
+- Discord Message 생성/수정 (`DiscordJsMessageAdapter`), Mention 정책,
+  Discord API Error Mapping
 
-실제 Discord 메시지 송수신과 Idempotency 저장소는 포함하지 않는다.
+Idempotency 저장소는 포함하지 않는다(다음 Phase 예정). 동일
+`X-Idempotency-Key`로 CREATE를 다시 호출해도 현재는 중복 전송을 막지
+않는다.
 
 ## Development Rules
 

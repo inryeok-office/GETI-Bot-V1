@@ -2,7 +2,10 @@ import { createLogger } from './common/logger.js';
 import { loadEnv } from './config/env.js';
 import { connectDiscordClient, createDiscordClient, isDiscordConnected } from './app/discord.js';
 import { createServer } from './app/server.js';
+import { DiscordJsMessageAdapter } from './discord-delivery/adapter.js';
+import { DiscordDeliveryCommandHandler } from './discord-delivery/command-handler.js';
 import { notImplementedDiscordMessageCommandHandler } from './internal-api/handler.js';
+import type { DiscordMessageCommandHandler } from './internal-api/handler.js';
 import type { InternalApiOptions } from './internal-api/routes.js';
 
 async function main(): Promise<void> {
@@ -13,10 +16,12 @@ async function main(): Promise<void> {
   });
 
   const discordClient = createDiscordClient();
+  let discordConnected = false;
 
   if (env.DISCORD_BOT_TOKEN) {
     try {
       await connectDiscordClient(discordClient, env.DISCORD_BOT_TOKEN);
+      discordConnected = true;
       logger.info('Discord client connected');
     } catch (error) {
       logger.error({ err: error }, 'Failed to connect Discord client');
@@ -25,14 +30,16 @@ async function main(): Promise<void> {
     logger.warn('DISCORD_BOT_TOKEN is not set. Skipping Discord client connection.');
   }
 
+  // Discord Client가 연결되어 있을 때만 실제 Delivery Handler를 사용한다.
+  // 연결되지 않은 상태(Token 미설정/연결 실패)에서는 요청 검증/Command
+  // 매핑까지만 수행하는 Placeholder Handler로 안전하게 대체한다.
+  const messageCommandHandler: DiscordMessageCommandHandler = discordConnected
+    ? new DiscordDeliveryCommandHandler(new DiscordJsMessageAdapter(discordClient))
+    : notImplementedDiscordMessageCommandHandler;
+
   let internalApi: InternalApiOptions | undefined;
   if (env.GETI_INTERNAL_API_KEY) {
-    // Renderer/Discord Message Service는 이후 Phase에서 구현되므로, 그
-    // 전까지는 요청 검증/Command 매핑까지만 수행하는 Placeholder Handler를 사용한다.
-    internalApi = {
-      apiKey: env.GETI_INTERNAL_API_KEY,
-      handler: notImplementedDiscordMessageCommandHandler,
-    };
+    internalApi = { apiKey: env.GETI_INTERNAL_API_KEY, handler: messageCommandHandler };
   } else {
     logger.warn('GETI_INTERNAL_API_KEY is not set. Internal Discord API routes are disabled.');
   }
