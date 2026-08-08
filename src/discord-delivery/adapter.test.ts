@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
+import pino from 'pino';
 import type { Client } from 'discord.js';
 import { DiscordJsMessageAdapter } from './adapter.js';
 import type { DiscordSendPayload } from './types.js';
+
+const logger = pino({ level: 'silent' });
 
 const basePayload: DiscordSendPayload = {
   embeds: [{ title: '테스트 제목' }],
@@ -24,10 +27,14 @@ function fakeClient(channel: unknown): Client {
   } as unknown as Client;
 }
 
+function buildAdapter(channel: unknown): DiscordJsMessageAdapter {
+  return new DiscordJsMessageAdapter(fakeClient(channel), logger);
+}
+
 describe('DiscordJsMessageAdapter.sendMessage', () => {
   it('fetches the channel and sends the rendered embeds', async () => {
     const channel = fakeChannel();
-    const adapter = new DiscordJsMessageAdapter(fakeClient(channel));
+    const adapter = buildAdapter(channel);
 
     const messageId = await adapter.sendMessage('channel-1', {
       ...basePayload,
@@ -44,7 +51,7 @@ describe('DiscordJsMessageAdapter.sendMessage', () => {
   });
 
   it('throws CHANNEL_NOT_FOUND when the channel does not exist', async () => {
-    const adapter = new DiscordJsMessageAdapter(fakeClient(null));
+    const adapter = buildAdapter(null);
 
     await expect(adapter.sendMessage('channel-1', basePayload)).rejects.toMatchObject({
       code: 'CHANNEL_NOT_FOUND',
@@ -53,7 +60,16 @@ describe('DiscordJsMessageAdapter.sendMessage', () => {
 
   it('throws CHANNEL_NOT_FOUND when the channel is DM-based', async () => {
     const channel = fakeChannel({ isDMBased: () => true });
-    const adapter = new DiscordJsMessageAdapter(fakeClient(channel));
+    const adapter = buildAdapter(channel);
+
+    await expect(adapter.sendMessage('channel-1', basePayload)).rejects.toMatchObject({
+      code: 'CHANNEL_NOT_FOUND',
+    });
+  });
+
+  it('throws CHANNEL_NOT_FOUND when the channel is not text-based (e.g. a Forum channel)', async () => {
+    const channel = fakeChannel({ isTextBased: () => false });
+    const adapter = buildAdapter(channel);
 
     await expect(adapter.sendMessage('channel-1', basePayload)).rejects.toMatchObject({
       code: 'CHANNEL_NOT_FOUND',
@@ -64,7 +80,7 @@ describe('DiscordJsMessageAdapter.sendMessage', () => {
     const channel = fakeChannel({
       send: vi.fn().mockRejectedValue({ code: 50013, message: 'Missing Permissions' }),
     });
-    const adapter = new DiscordJsMessageAdapter(fakeClient(channel));
+    const adapter = buildAdapter(channel);
 
     await expect(adapter.sendMessage('channel-1', basePayload)).rejects.toMatchObject({
       code: 'MISSING_PERMISSION',
@@ -79,7 +95,7 @@ describe('DiscordJsMessageAdapter.editMessage', () => {
     const channel = fakeChannel({
       messages: { fetch: vi.fn().mockResolvedValue(existingMessage) },
     });
-    const adapter = new DiscordJsMessageAdapter(fakeClient(channel));
+    const adapter = buildAdapter(channel);
 
     const messageId = await adapter.editMessage('channel-1', 'message-1', basePayload);
 
@@ -96,7 +112,7 @@ describe('DiscordJsMessageAdapter.editMessage', () => {
     const channel = fakeChannel({
       messages: { fetch: vi.fn().mockResolvedValue(existingMessage) },
     });
-    const adapter = new DiscordJsMessageAdapter(fakeClient(channel));
+    const adapter = buildAdapter(channel);
 
     await adapter.editMessage('channel-1', 'message-1', { ...basePayload, content: undefined });
 
@@ -108,7 +124,7 @@ describe('DiscordJsMessageAdapter.editMessage', () => {
     const channel = fakeChannel({
       messages: { fetch: vi.fn().mockRejectedValue({ code: 10008, message: 'Unknown Message' }) },
     });
-    const adapter = new DiscordJsMessageAdapter(fakeClient(channel));
+    const adapter = buildAdapter(channel);
 
     await expect(adapter.editMessage('channel-1', 'message-1', basePayload)).rejects.toMatchObject({
       code: 'MESSAGE_NOT_FOUND',
@@ -116,7 +132,7 @@ describe('DiscordJsMessageAdapter.editMessage', () => {
   });
 
   it('throws CHANNEL_NOT_FOUND when the channel no longer exists', async () => {
-    const adapter = new DiscordJsMessageAdapter(fakeClient(null));
+    const adapter = buildAdapter(null);
 
     await expect(adapter.editMessage('channel-1', 'message-1', basePayload)).rejects.toMatchObject({
       code: 'CHANNEL_NOT_FOUND',

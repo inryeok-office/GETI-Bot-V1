@@ -1,4 +1,5 @@
 import type { APIEmbed, Client, GuildTextBasedChannel, MessageEditOptions } from 'discord.js';
+import type { Logger } from 'pino';
 import { ApiError } from '../internal-api/error.js';
 import type { RenderedEmbed } from '../renderer/types.js';
 import { mapDiscordError } from './error-mapping.js';
@@ -22,7 +23,10 @@ function toAPIEmbed(embed: RenderedEmbed): APIEmbed {
  * discord.js Client API를 호출한다.
  */
 export class DiscordJsMessageAdapter implements DiscordMessageAdapter {
-  constructor(private readonly client: Client) {}
+  constructor(
+    private readonly client: Client,
+    private readonly logger: Logger,
+  ) {}
 
   async sendMessage(channelId: string, payload: DiscordSendPayload): Promise<string> {
     const channel = await this.fetchSendableChannel(channelId);
@@ -35,7 +39,7 @@ export class DiscordJsMessageAdapter implements DiscordMessageAdapter {
       });
       return message.id;
     } catch (error) {
-      throw mapDiscordError(error);
+      throw this.mapAndLog(error, 'Failed to send Discord message');
     }
   }
 
@@ -50,7 +54,7 @@ export class DiscordJsMessageAdapter implements DiscordMessageAdapter {
     try {
       existing = await channel.messages.fetch(messageId);
     } catch (error) {
-      throw mapDiscordError(error);
+      throw this.mapAndLog(error, 'Failed to fetch existing Discord message');
     }
 
     const options: MessageEditOptions = {
@@ -68,7 +72,7 @@ export class DiscordJsMessageAdapter implements DiscordMessageAdapter {
       const edited = await existing.edit(options);
       return edited.id;
     } catch (error) {
-      throw mapDiscordError(error);
+      throw this.mapAndLog(error, 'Failed to edit Discord message');
     }
   }
 
@@ -77,7 +81,7 @@ export class DiscordJsMessageAdapter implements DiscordMessageAdapter {
     try {
       channel = await this.client.channels.fetch(channelId);
     } catch (error) {
-      throw mapDiscordError(error);
+      throw this.mapAndLog(error, 'Failed to fetch Discord channel');
     }
 
     if (!channel || channel.isDMBased() || !channel.isTextBased()) {
@@ -88,5 +92,16 @@ export class DiscordJsMessageAdapter implements DiscordMessageAdapter {
     }
 
     return channel;
+  }
+
+  /**
+   * discord.js 오류를 ApiError로 변환하기 전에 원본 오류를 서버 로그에
+   * 남긴다. HTTP 응답에는 안전한 ApiError만 노출되지만, 실제 원인
+   * (Discord API 오류 코드 등)은 로그로 추적할 수 있어야 한다.
+   */
+  private mapAndLog(error: unknown, message: string): ApiError {
+    const apiError = mapDiscordError(error);
+    this.logger.warn({ err: error, code: apiError.code }, message);
+    return apiError;
   }
 }

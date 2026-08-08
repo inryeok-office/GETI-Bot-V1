@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   // 연결되지 않은 상태(Token 미설정/연결 실패)에서는 요청 검증/Command
   // 매핑까지만 수행하는 Placeholder Handler로 안전하게 대체한다.
   const messageCommandHandler: DiscordMessageCommandHandler = discordConnected
-    ? new DiscordDeliveryCommandHandler(new DiscordJsMessageAdapter(discordClient))
+    ? new DiscordDeliveryCommandHandler(new DiscordJsMessageAdapter(discordClient, logger))
     : notImplementedDiscordMessageCommandHandler;
 
   let internalApi: InternalApiOptions | undefined;
