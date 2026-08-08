@@ -1,4 +1,4 @@
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppInstance } from '../app/fastify-instance.js';
 import { withTimeout } from '../common/timeout.js';
 import { isValidInternalApiKey } from './auth.js';
@@ -71,6 +71,22 @@ export function registerInternalDiscordRoutes(app: AppInstance, options: Interna
   const { apiKey, handler, commandTimeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = options;
 
   app.register(async (internalApp) => {
+    // Body 크기 초과, 잘못된 JSON 등 Route Handler에 도달하기 전에
+    // Fastify가 자체적으로 던지는 오류까지 Internal API Error Contract와
+    // 동일한 응답 형태(code/message/retryable/requestId)로 통일한다.
+    // HTTP Status는 Fastify가 판단한 값(예: 413)을 그대로 유지한다.
+    internalApp.setErrorHandler(
+      (error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
+        const requestId = request.id;
+        request.log.warn(
+          { err: error, requestId, statusCode: error.statusCode },
+          'Internal API request rejected before reaching the route handler',
+        );
+        const apiError = new ApiError('INVALID_REQUEST', 'Request could not be processed', false);
+        return reply.code(error.statusCode ?? 400).send(buildErrorResponse(apiError, requestId));
+      },
+    );
+
     internalApp.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
       const candidate = extractHeaderValue(request.headers['x-internal-api-key']);
       if (!isValidInternalApiKey(candidate, apiKey)) {

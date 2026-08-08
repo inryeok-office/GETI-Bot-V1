@@ -210,6 +210,11 @@ CREATE 요청 → IdempotentDiscordMessageCommandHandler
 - **Request Id 로깅**: CREATE/PATCH 성공 시 `requestId`와 결과
   `messageId`를 포함한 로그를 남긴다(Fastify의 기본 Access Log에 더해
   도메인 수준 로그를 보강).
+- **Error Response 일관성**: Body 크기 초과, 잘못된 JSON 등 Route
+  Handler에 도달하기 전에 Fastify가 자체적으로 던지는 오류도 Internal
+  API Error Contract(`code`/`message`/`retryable`/`requestId`)와 동일한
+  형태로 응답한다. HTTP Status는 Fastify가 판단한 값(예: Body 초과 시
+  413)을 그대로 유지한다.
 
 ## 현재 구현 범위
 
