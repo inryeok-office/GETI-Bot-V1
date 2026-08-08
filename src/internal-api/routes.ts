@@ -57,7 +57,7 @@ export function registerInternalDiscordRoutes(app: AppInstance, options: Interna
     internalApp.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
       const candidate = extractHeaderValue(request.headers['x-internal-api-key']);
       if (!isValidInternalApiKey(candidate, apiKey)) {
-        sendApiError(
+        return sendApiError(
           reply,
           new ApiError('UNAUTHORIZED', 'Invalid or missing X-Internal-Api-Key'),
           request.id,
