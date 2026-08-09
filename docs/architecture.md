@@ -112,7 +112,11 @@ Discord Message 전송까지 정상 동작한다. `DISCORD_BOT_TOKEN`이 설정�
 Discord Client가 연결된 경우에만 실제 Delivery Handler를 사용하며, 그
 외의 경우(Token 미설정/연결 실패)에는 요청 검증/Command 매핑까지만
 수행하고 `INTERNAL_ERROR`를 반환하는 Placeholder Handler로 안전하게
-대체한다.
+대체한다. `production` 환경에서는 `DISCORD_BOT_TOKEN`이 없거나 Discord
+로그인 자체가 실패하면 이 Placeholder 상태로 조용히 넘어가지 않고 기동을
+실패시킨다(Container는 RUNNING인데 Discord Bot은 죽어 있는 상태를 정상
+운영으로 오인하지 않기 위함). 이 Placeholder Handler 경로는 이제
+development/test 환경에서만 발생한다.
 
 ## Renderer
 
@@ -175,6 +179,42 @@ DiscordMessageCommand → Renderer → RenderedDiscordMessage
 - 실제 Discord Guild/Token을 사용하는 통합 Test는 하지 않는다. Fake
   Adapter/Mock Client로 Command Handler와 Adapter를 각각 Unit Test한다.
 
+## Discord Prefix Command
+
+GETI Server Internal API와 무관하게, Discord 채널에서 직접 사용할 수 있는
+`!` Prefix Command다. Bot 운영 상태를 Discord에서 바로 확인하기 위한
+용도이며, GETI Server 상태나 비즈니스 데이터는 다루지 않는다.
+
+```
+messageCreate → dispatchMessage
+→ Bot/Webhook/DM 필터링 → parseCommand → CommandRegistry.find
+→ DiscordTextCommand.execute
+```
+
+- `!명령어`: `CommandRegistry`에 등록된 Command 목록을 Embed로 안내한다.
+  하드코딩된 목록이 아니라 Registry를 그대로 순회하므로, Command가 추가로
+  등록되면 자동으로 반영된다.
+- `!상태 봇`: 현재 Discord Bot Process 자체의 상태만 보여준다(Discord
+  연결 여부, Gateway Ping, Uptime, 연결된 Guild 수, `package.json` 기준
+  Version, `NODE_ENV`). GETI Server 상태는 조회하지 않는다(`!상태 서버`는
+  아직 구현하지 않았다).
+- Command 응답 Embed는 Renderer/Discord Delivery가 쓰는
+  `RenderedEmbed`/Mention 정책과 분리된 별도 타입(`CommandEmbed`)을
+  사용한다. GETI Server → Discord 메시지 파이프라인과 Prefix Command
+  파이프라인을 섞지 않기 위함이다.
+- Command 응답은 `message.reply()`로 보내되 `allowedMentions.repliedUser`
+  를 `false`로 고정해 불필요한 Mention을 만들지 않는다.
+- Bot 자신을 포함한 Bot 계정 Message와 Webhook Message, DM은 처리하지
+  않는다.
+- Command 실행 또는 응답 전송이 실패해도(예: Embed Links 권한 없음) 그
+  실패를 안전하게 catch하고 Bot Process는 계속 실행된다. 로그에는
+  `commandName`/`guildId`/`channelId` 정도만 남기고 사용자 Message 원문은
+  남기지 않는다.
+- `!` Prefix Command는 Guild Message의 실제 내용을 읽어야 하므로
+  `GatewayIntentBits.MessageContent`(Privileged Intent)가 필요하다. Discord
+  Developer Portal의 Bot → Privileged Gateway Intents에서 별도로 켜야
+  한다. `GuildMembers`/`GuildPresences`는 사용하지 않는다.
+
 ## Idempotency
 
 `IdempotencyStore<T>` Interface와 `InMemoryIdempotencyStore<T>` 구현으로
@@ -229,6 +269,10 @@ CREATE 요청 → IdempotentDiscordMessageCommandHandler
   Discord API Error Mapping
 - CREATE 중복 방지(In-memory Idempotency, 동일 Process 생명주기 한정),
   Command Timeout, Body Size 제한
+- Discord Prefix Command(`!명령어`, `!상태 봇`)와 이를 위한
+  `GuildMessages`/`MessageContent` Intent
+- Production Runtime 보강: `production`에서 `DISCORD_BOT_TOKEN`/
+  `GETI_INTERNAL_API_KEY` 필수화, Discord 로그인 실패 시 기동 실패
 
 Redis/DB/Queue 등 외부 저장소를 이용한 Durable Idempotency는 포함하지
 않는다.

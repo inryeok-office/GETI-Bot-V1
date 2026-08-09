@@ -45,17 +45,35 @@ describe('loadEnv', () => {
   });
 
   it('requires GETI_INTERNAL_API_KEY when NODE_ENV is production', () => {
-    expect(() => loadEnv({ NODE_ENV: 'production' })).toThrow(/GETI_INTERNAL_API_KEY/);
+    expect(() => loadEnv({ NODE_ENV: 'production', DISCORD_BOT_TOKEN: 'token-value' })).toThrow(
+      /GETI_INTERNAL_API_KEY/,
+    );
   });
 
-  it('does not require GETI_INTERNAL_API_KEY outside production', () => {
+  it('requires DISCORD_BOT_TOKEN when NODE_ENV is production', () => {
+    expect(() => loadEnv({ NODE_ENV: 'production', GETI_INTERNAL_API_KEY: 'api-key' })).toThrow(
+      /DISCORD_BOT_TOKEN/,
+    );
+  });
+
+  it('does not require GETI_INTERNAL_API_KEY or DISCORD_BOT_TOKEN outside production', () => {
     expect(() => loadEnv({ NODE_ENV: 'development' })).not.toThrow();
     expect(() => loadEnv({ NODE_ENV: 'test' })).not.toThrow();
   });
 
-  it('succeeds in production when GETI_INTERNAL_API_KEY is set', () => {
+  it('succeeds in production when DISCORD_BOT_TOKEN and GETI_INTERNAL_API_KEY are both set', () => {
     expect(() =>
-      loadEnv({ NODE_ENV: 'production', GETI_INTERNAL_API_KEY: 'api-key' }),
+      loadEnv({
+        NODE_ENV: 'production',
+        DISCORD_BOT_TOKEN: 'token-value',
+        GETI_INTERNAL_API_KEY: 'api-key',
+      }),
     ).not.toThrow();
+  });
+
+  it('reports both missing production requirements at once', () => {
+    expect(() => loadEnv({ NODE_ENV: 'production' })).toThrow(
+      /DISCORD_BOT_TOKEN.*GETI_INTERNAL_API_KEY|GETI_INTERNAL_API_KEY.*DISCORD_BOT_TOKEN/,
+    );
   });
 });

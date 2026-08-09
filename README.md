@@ -9,8 +9,9 @@ GETI 원본 데이터와 비즈니스 판단은 Spring Boot 기반 GETI Server�
 
 > 현재는 Internal API(인증/Request Validation/Command Mapping), Discord
 > Embed Renderer, Discord 메시지 생성/수정(Delivery), CREATE 중복 방지
-> (In-memory Idempotency)까지 구현된 단계입니다. `GET /health`와
-> Internal API 2종을 제공합니다.
+> (In-memory Idempotency), Discord Prefix Command(`!명령어`, `!상태 봇`)까지
+> 구현된 단계입니다. `GET /health`, Internal API 2종, Prefix Command 2종을
+> 제공합니다.
 
 ## Architecture 요약
 
@@ -49,17 +50,43 @@ pnpm install
 cp .env.example .env
 ```
 
-| 변수                     | 설명                                              | 필수 여부                                                  |
-| ------------------------ | ------------------------------------------------- | ---------------------------------------------------------- |
-| `NODE_ENV`               | 실행 환경 (`development` / `test` / `production`) | 아니오 (기본값 `development`)                              |
-| `PORT`                   | HTTP 서버 포트                                    | 아니오 (기본값 `3000`)                                     |
-| `DISCORD_BOT_TOKEN`      | Discord Bot Token                                 | 아니오 (없으면 Discord 연결을 건너뛰고 Health 서버만 기동) |
-| `DISCORD_APPLICATION_ID` | Discord Application ID                            | 아니오                                                     |
-| `GETI_INTERNAL_API_KEY`  | GETI Server 연동용 Internal API Key               | `production`에서는 필수 (없으면 기동 실패)                 |
-| `LOG_LEVEL`              | Pino 로그 레벨                                    | 아니오 (기본값 `info`)                                     |
+| 변수                     | 설명                                              | 필수 여부                                  |
+| ------------------------ | ------------------------------------------------- | ------------------------------------------ |
+| `NODE_ENV`               | 실행 환경 (`development` / `test` / `production`) | 아니오 (기본값 `development`)              |
+| `PORT`                   | HTTP 서버 포트                                    | 아니오 (기본값 `3000`)                     |
+| `DISCORD_BOT_TOKEN`      | Discord Bot Token                                 | `production`에서는 필수 (없으면 기동 실패) |
+| `DISCORD_APPLICATION_ID` | Discord Application ID                            | 아니오                                     |
+| `GETI_INTERNAL_API_KEY`  | GETI Server 연동용 Internal API Key               | `production`에서는 필수 (없으면 기동 실패) |
+| `LOG_LEVEL`              | Pino 로그 레벨                                    | 아니오 (기본값 `info`)                     |
+
+`development`/`test`에서는 `DISCORD_BOT_TOKEN` 없이도 Health 서버만
+기동할 수 있습니다. `production`에서는 Container가 RUNNING 상태인데
+Discord Bot은 실제로 동작하지 않는 상태(Silent Failure)를 막기 위해
+`DISCORD_BOT_TOKEN`이 없거나 Discord 로그인 자체가 실패하면 기동을
+실패시킵니다.
 
 Discord Bot Token은 [Discord Developer Portal](https://discord.com/developers/applications)에서
 Application을 생성한 뒤 Bot 탭에서 발급받을 수 있습니다.
+
+### Required Discord Gateway Intent
+
+`!` Prefix Command가 Guild 채팅 메시지를 읽으려면 아래 Intent가 모두
+필요합니다.
+
+- `Guilds`
+- `GuildMessages`
+- `MessageContent` (Privileged Intent)
+
+`MessageContent`는 Discord Developer Portal에서 별도로 켜야 합니다.
+
+```
+Discord Developer Portal → Bot → Privileged Gateway Intents
+→ Message Content Intent: ON
+→ Presence Intent: OFF
+→ Server Members Intent: OFF
+```
+
+`GuildMembers`/`GuildPresences`는 사용하지 않습니다.
 
 ## Local Run
 
@@ -96,6 +123,19 @@ Placeholder Handler로 안전하게 대체합니다.
 CREATE/PATCH Command 처리에는 기본 10초 Timeout이 적용되며, 초과 시
 `DISCORD_UNAVAILABLE`(retryable)로 응답합니다. Request Body는
 256KB로 제한됩니다.
+
+## Commands
+
+Guild Text Channel에서 사용할 수 있는 `!` Prefix Command입니다. Bot
+자신을 포함한 Bot Message, Webhook Message, DM은 처리하지 않습니다.
+
+| 명령어     | 설명                                       |
+| ---------- | ------------------------------------------ |
+| `!명령어`  | 등록된 명령어 목록을 확인합니다.           |
+| `!상태 봇` | 현재 Discord Bot의 동작 상태를 확인합니다. |
+
+`!상태 서버`(GETI Server 상태 조회)는 향후 추가 예정이며 이번 단계에는
+포함되지 않습니다.
 
 ## Test
 
@@ -175,6 +215,16 @@ src/
 ├─ idempotency/
 │  ├─ store.ts              # IdempotencyStore / InMemoryIdempotencyStore
 │  └─ idempotent-handler.ts # CREATE 중복 방지 Decorator
+├─ commands/
+│  ├─ types.ts              # DiscordTextCommand / CommandEmbed 계약
+│  ├─ registry.ts           # CommandRegistry (`!명령어`의 Source of Truth)
+│  ├─ parser.ts              # `!` Prefix Command Parsing
+│  ├─ dispatcher.ts          # messageCreate → Registry 연결
+│  ├─ help-command.ts        # `!명령어`
+│  ├─ bot-status-command.ts  # `!상태 봇`
+│  ├─ bot-status-query.ts    # discord.js Client 상태 조회 Adapter
+│  ├─ uptime.ts               # Uptime Formatting
+│  └─ version.ts              # package.json 기준 Bot Version
 └─ index.ts       # Bootstrap / Graceful Shutdown
 ```
 
