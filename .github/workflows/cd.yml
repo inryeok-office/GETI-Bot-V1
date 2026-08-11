@@ -1,0 +1,43 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: cd-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          command_timeout: 8m
+          script: |
+            set -e
+            cd ~/GETI-Bot-V1
+
+            git fetch origin main
+            git reset --hard origin/main
+
+            cat > .env << 'ENVEOF'
+            NODE_ENV=production
+            PORT=3000
+            DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }}
+            DISCORD_APPLICATION_ID=${{ secrets.DISCORD_APPLICATION_ID }}
+            GETI_INTERNAL_API_KEY=${{ secrets.GETI_INTERNAL_API_KEY }}
+            LOG_LEVEL=info
+            ENVEOF
+
+            sudo docker compose up -d --build
+
+            sleep 5
+            sudo docker ps --filter "name=geti-bot" --format "{{.Status}}"
