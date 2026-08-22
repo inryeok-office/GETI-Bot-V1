@@ -9,3 +9,11 @@ services:
       - NODE_ENV=production
     ports:
       - '3000:3000'
+    networks:
+      - geti-bot-net
+
+networks:
+  geti-bot-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: 1400
